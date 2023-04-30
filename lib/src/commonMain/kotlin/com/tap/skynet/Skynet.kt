@@ -50,28 +50,11 @@ class Skynet internal constructor(
         val serializer = serializer(serializersModule)
         val node = initialise(serializer)
 
-        val ctx = object : NodeContext {
-
-            override fun messageId(): Int {
-                return node.messageCount.value
-            }
-
-            override fun putMeta(value: Int) {
-                node.meta.push(value)
-            }
-
-            override fun meta(): List<Int> {
-                return node.meta.toList()
-            }
-
-
-        }
-
         stdin.flatMapMerge { message ->
             flow {
                 val input = serializer.decodeFromString(MessageSerializer(Request.serializer()), message)
                 val (handler, replySerializer) = handlerLookup[input.body::class]!!
-                val contextHandler = runner(handler(ctx)) // todo do this only once
+                val contextHandler = runner(handler(node)) // todo do this only once
                 val reply = Message(input.dst, input.src, contextHandler(input))
                 node.messageCount.getAndIncrement()
                 val output = when(reply.body) {
@@ -123,7 +106,7 @@ class Skynet internal constructor(
 
             val handlerLookup: MutableMap<KClass<Request>, Pair<NodeMessageHandler<Request, Reply>, KSerializer<Reply>>> = mutableMapOf()
             handlers.forEach { data ->
-                handlerLookup.put(data.requestClass, data.handler to data.replyClass.serializer())
+                handlerLookup[data.requestClass] =data.handler to data.replyClass.serializer()
             }
 
             return Skynet(
