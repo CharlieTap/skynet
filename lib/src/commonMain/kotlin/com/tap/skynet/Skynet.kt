@@ -2,72 +2,158 @@
 
 package com.tap.skynet
 
+import com.tap.skynet.actor.LibraryAction
+import com.tap.skynet.actor.library
+import com.tap.skynet.ext.readMessage
+import com.tap.skynet.ext.stderr
+import com.tap.skynet.ext.stdin
+import com.tap.skynet.ext.stdout
+import com.tap.skynet.ext.writeMessage
+import com.tap.skynet.gossip.Gossip
+import com.tap.skynet.gossip.GossipOk
+import com.tap.skynet.gossip.gossipMessageHandler
+import com.tap.skynet.gossip.gossipResponseHandler
+import com.tap.skynet.gossip.gossipScheduler
+import com.tap.skynet.handler.NodeRequestResponseHandler
+import com.tap.skynet.handler.RequestResponseHandler
+import com.tap.skynet.message.Init
+import com.tap.skynet.message.InitOk
+import com.tap.skynet.message.Message
+import com.tap.skynet.message.MessageBody
+import com.tap.skynet.message.MessageSerializer
+import com.tap.skynet.message.NodeError
+import com.tap.skynet.message.Request
+import com.tap.skynet.message.Response
 import kotlin.reflect.KClass
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.SendChannel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.flatMapMerge
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.serialization.InternalSerializationApi
-import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.serializer
+import com.tap.skynet.ext.serializer as JsonSerializer
 
 class Skynet internal constructor(
-    private val handlerLookup: Map<KClass<Request>, Pair<NodeMessageHandler<Request, Reply>, KSerializer<Reply>>>,
+    private val handlerLookup: Map<KClass<Request>, NodeRequestResponseHandler<Request, Response>>,
     private val serializersModule: SerializersModule,
+    private val serializer: Json = JsonSerializer(serializersModule),
+    private val scope: CoroutineScope = CoroutineScope(Job() + Dispatchers.Default),
+    private val input: Flow<String> = stdin(),
+    private val output: FlowCollector<String> = stdout,
+    private val error: FlowCollector<String> = stderr,
+    private val messageQueue: Channel<LibraryAction> = Channel(1000)
 ) {
 
-    private suspend fun initialise(json: Json) : Node {
-        val init = readMessage(json, Init.serializer())
+    companion object {
 
-        val payload = InitOk(0, init.body.msgId)
-        val initOk = Message(init.dst, init.src, payload)
-        writeMessage(json, initOk, InitOk.serializer())
+        private suspend fun init(
+            serializer: Json,
+            messageQueue: SendChannel<LibraryAction>
+        ) : Node {
+            val init = readMessage(serializer, Init.serializer())
 
-        return Node.factory(init.body)
-    }
+            val payload = InitOk(0, init.body.msgId)
+            val initOk = Message(init.dst, init.src, payload)
+            writeMessage(serializer, initOk as Message<MessageBody>, MessageBody.serializer())
 
-    private fun <I: Request> runner(
-        handler: MessageHandler<I,Reply>
-    ) : MessageHandler<I,Reply> = MessageHandler { message ->
-        kotlin.runCatching {
-            handler(message)
-        }.getOrElse {
-            NodeError(
-                ErrorCode.Crash,
-                "internal-error",
-                message.body.msgId
-            )
+            return Node.factory(init.body, messageQueue)
         }
+
+        private fun <I: Request> runner(
+            handler: RequestResponseHandler<I, Response>
+        ) : RequestResponseHandler<I, Response> = RequestResponseHandler { message ->
+            runCatching {
+                handler(message)
+            }.getOrElse {
+                NodeError.crash(it.toString())
+            }
+        }
+
     }
 
-    suspend fun run() {
+    private val messages = input.map { message ->
+        serializer.decodeFromString(MessageSerializer(MessageBody.serializer()), message)
+    }.shareIn(scope, SharingStarted.Lazily) // Has to be lazy else it could read init
 
-        val stdin = stdin()
-        val stdout = stdout()
+    private val requests = messages
+        .filter { it.body is Request }
+        .filterIsInstance<Message<Request>>()
 
-        val serializer = serializer(serializersModule)
-        val node = initialise(serializer)
+    private val responses = messages
+        .filter { it.body is Response }
+        .filterIsInstance<Message<Response>>()
 
-        stdin.flatMapMerge { message ->
+
+    private fun Flow<Message<Request>>.process(ctx: NodeContext): Flow<Message<Response>> {
+        return flatMapMerge { message ->
             flow {
-                val input = serializer.decodeFromString(MessageSerializer(Request.serializer()), message)
-                val (handler, replySerializer) = handlerLookup[input.body::class]!!
-                val contextHandler = runner(handler(node)) // todo do this only once
-                val reply = Message(input.dst, input.src, contextHandler(input))
-                node.messageCount.getAndIncrement()
-                val output = when(reply.body) {
-                    is Reply.Error -> {
-                        serializer.encodeToString(MessageSerializer(NodeError.serializer() as KSerializer<Reply>), reply)
-                    }
-                    is Reply.Success -> {
-                        serializer.encodeToString(MessageSerializer(replySerializer), reply)
-                    }
+                val handler = handlerLookup[message.body::class] ?: run {
+                    val error = NodeError.crash("Unable to find handler for message: $message")
+                    val crash = Message(message.dst, message.src, error)
+                    emit(crash as Message<Response>)
+                    return@flow
                 }
-                emit(output)
+                val contextHandler = runner(handler(ctx)) // todo do this only once
+                val reply = Message(message.dst, message.src, contextHandler(message))
+                emit(reply)
             }
-        }.flowOn(Dispatchers.Default).collect(stdout)
+        }.flowOn(Dispatchers.Default)
+    }
+
+    private fun Flow<Message<Response>>.process(ctx: NodeContext): Flow<Unit> {
+        return map { message ->
+            val handler = gossipResponseHandler()(ctx)
+            handler(message as Message<GossipOk>)
+        }.flowOn(Dispatchers.Default)
+    }
+
+    private fun <T: MessageBody> Flow<Message<T>>.serialize(serializer: Json): Flow<String> {
+        return map { message ->
+            serializer.encodeToString(MessageSerializer(MessageBody.serializer()), message as Message<MessageBody>)
+        }.flowOn(Dispatchers.Default)
+    }
+
+    suspend fun run() = scope.launch {
+
+        val node = init(serializer, messageQueue)
+
+        val state = launch { library(messageQueue) }
+
+        val scheduler = launch {
+            gossipScheduler(node, messageQueue, serializer).collect(output)
+        }
+
+        val callbacks = launch {
+            responses.process(node).collect()
+        }
+
+        val processed = requests.process(node).shareIn(scope, SharingStarted.Lazily, 100)
+
+        val successes = launch {
+            processed.filter { it.body is Response.Success }.serialize(serializer).collect(output)
+        }
+
+        val failures = launch {
+            processed.filter { it.body is Response.Error }.serialize(serializer).collect(error)
+        }
+
+        listOf(state, scheduler, callbacks, successes, failures).joinAll()
     }
 
 
@@ -76,21 +162,21 @@ class Skynet internal constructor(
 
         data class HandlerData(
             val requestClass: KClass<Request>,
-            val replyClass: KClass<Reply>,
-            val handler: NodeMessageHandler<Request, Reply>
+            val responseClass: KClass<Response>,
+            val handler: NodeRequestResponseHandler<Request, Response>
         )
 
         @PublishedApi
         internal var handlers: MutableSet<HandlerData> = mutableSetOf()
 
-        inline fun <reified I: Request, reified O: Reply> registerHandler(
-            handler: NodeMessageHandler<I, O>
+        inline fun <reified I: Request, reified O: Response> registerHandler(
+            handler: NodeRequestResponseHandler<I, O>
         ) {
             @Suppress("UNCHECKED_CAST")
             val data = HandlerData(
                 I::class as KClass<Request>,
-                O::class as KClass<Reply>,
-                handler as NodeMessageHandler<Request, Reply>
+                O::class as KClass<Response>,
+                handler as NodeRequestResponseHandler<Request, Response>
             )
 
             handlers.add(data)
@@ -98,15 +184,21 @@ class Skynet internal constructor(
 
         fun build(): Skynet {
 
+            registerHandler(gossipMessageHandler())
+
             val module = SerializersModule {
+                polymorphic(MessageBody::class, InitOk::class, InitOk.serializer())
+                polymorphic(MessageBody::class, Gossip::class, Gossip.serializer())
+                polymorphic(MessageBody::class, GossipOk::class, GossipOk.serializer())
                 handlers.forEach { entry ->
-                    polymorphic(Request::class, entry.requestClass, entry.requestClass.serializer())
+                    polymorphic(MessageBody::class, entry.requestClass, entry.requestClass.serializer())
+                    polymorphic(MessageBody::class, entry.responseClass, entry.responseClass.serializer())
                 }
             }
 
-            val handlerLookup: MutableMap<KClass<Request>, Pair<NodeMessageHandler<Request, Reply>, KSerializer<Reply>>> = mutableMapOf()
+            val handlerLookup: MutableMap<KClass<Request>, NodeRequestResponseHandler<Request, Response>> = mutableMapOf()
             handlers.forEach { data ->
-                handlerLookup[data.requestClass] =data.handler to data.replyClass.serializer()
+                handlerLookup[data.requestClass] = data.handler
             }
 
             return Skynet(

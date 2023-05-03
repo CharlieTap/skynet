@@ -2,10 +2,10 @@
 import com.benasher44.uuid.Uuid
 import com.benasher44.uuid.uuid4
 import com.benasher44.uuid.uuidFrom
-import com.tap.skynet.MessageHandler
-import com.tap.skynet.NodeMessageHandler
-import com.tap.skynet.Reply
-import com.tap.skynet.Request
+import com.tap.skynet.handler.RequestResponseHandler
+import com.tap.skynet.handler.NodeRequestResponseHandler
+import com.tap.skynet.message.Response
+import com.tap.skynet.message.Request
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -15,9 +15,9 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
-fun generateMessageHandler() : NodeMessageHandler<Generate, GenerateOk> = NodeMessageHandler { ctx ->
-    MessageHandler { message ->
-        GenerateOk(ctx.messageId(), message.body.msgId, uuid4())
+fun generateMessageHandler() : NodeRequestResponseHandler<Generate, GenerateOk> = NodeRequestResponseHandler { ctx ->
+    RequestResponseHandler { message ->
+        GenerateOk(ctx.newMessageId(), message.body.msgId, uuid4())
     }
 }
 
@@ -28,6 +28,7 @@ data class Generate(
     override val msgId: Int,
 ): Request()
 
+@SerialName("generate_ok")
 @Serializable
 data class GenerateOk(
     @SerialName("msg_id")
@@ -36,7 +37,7 @@ data class GenerateOk(
     override val inReplyTo: Int,
     @Serializable(with = UuidSerializer::class)
     val id: Uuid,
-): Reply.Success("generate_ok")
+): Response.Success()
 
 object UuidSerializer : KSerializer<Uuid> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("Uuid", PrimitiveKind.STRING)

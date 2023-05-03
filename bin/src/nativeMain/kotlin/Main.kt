@@ -14,7 +14,9 @@ fun main() {
     }.build()
     runBlocking {
         withContext(Dispatchers.Default) {
-            skynet.run()
+            skynet.run().apply {
+                join()
+            }
         }
     }
 }

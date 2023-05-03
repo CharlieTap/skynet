@@ -1,7 +1,10 @@
 package com.tap.skynet
 
 interface NodeContext {
-    fun messageId(): Int
-    fun putMeta(value: Int)
-    fun meta(): List<Int>
+    fun nodeId(): String
+    fun newMessageId(): Int
+    fun setNeighbours(neighbours: Set<String>)
+    suspend fun storeMessage(value: Int)
+    suspend fun recordNeighbourMessages(node: String, messages: Set<Int>)
+    suspend fun messages(): Set<Int>
 }

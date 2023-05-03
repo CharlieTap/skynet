@@ -1,13 +1,14 @@
-import com.tap.skynet.MessageHandler
-import com.tap.skynet.NodeMessageHandler
-import com.tap.skynet.Reply
-import com.tap.skynet.Request
+
+import com.tap.skynet.handler.NodeRequestResponseHandler
+import com.tap.skynet.handler.RequestResponseHandler
+import com.tap.skynet.message.Request
+import com.tap.skynet.message.Response
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-fun readMessageHandler() : NodeMessageHandler<Read, ReadOk> = NodeMessageHandler { ctx ->
-    MessageHandler { message ->
-        ReadOk(ctx.messageId(), message.body.msgId, ctx.meta())
+fun readMessageHandler() : NodeRequestResponseHandler<Read, ReadOk> = NodeRequestResponseHandler { ctx ->
+    RequestResponseHandler { message ->
+        ReadOk(ctx.newMessageId(), message.body.msgId, ctx.messages())
     }
 }
 
@@ -18,11 +19,12 @@ data class Read(
     override val msgId: Int,
 ): Request()
 
+@SerialName("read_ok")
 @Serializable
 data class ReadOk(
     @SerialName("msg_id")
     override val msgId: Int,
     @SerialName("in_reply_to")
     override val inReplyTo: Int,
-    val messages: List<Int>,
-): Reply.Success("read_ok")
+    val messages: Set<Int>,
+): Response.Success()

@@ -1,42 +1,62 @@
 package com.tap.skynet
 
+import com.tap.skynet.actor.AddMessage
+import com.tap.skynet.actor.GetMessages
+import com.tap.skynet.actor.LibraryAction
+import com.tap.skynet.actor.RecordMessagesFromNode
+import com.tap.skynet.message.Init
 import kotlinx.atomicfu.AtomicInt
+import kotlinx.atomicfu.AtomicRef
 import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.update
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.channels.SendChannel
 
 internal data class Node(
     val id: String,
-    val neighbours: Set<String>,
+    val neighbours: AtomicRef<Set<String>>,
     val messageCount: AtomicInt,
-    val meta: AtomicLinkedList<Int>
+    val messageQueue: SendChannel<LibraryAction>
 ): NodeContext {
+
     companion object {
-        fun factory(msg: Init) : Node {
+        fun factory(msg: Init, messageQueue: SendChannel<LibraryAction>) : Node {
             return Node(
                 msg.nodeId,
-                msg.nodeIds - msg.nodeId,
+                atomic(emptySet()),
                 atomic(1),
-                AtomicLinkedList()
+                messageQueue
             )
         }
     }
 
-    override fun messageId(): Int {
-        return messageCount.value
+    override fun nodeId(): String {
+       return id
     }
 
-    override fun putMeta(value: Int) {
-        meta.push(value)
+    override fun newMessageId(): Int {
+        return messageCount.getAndIncrement()
     }
 
-    override fun meta(): List<Int> {
-        return meta.toList()
+    override fun setNeighbours(neighbours: Set<String>) {
+         this.neighbours.update {
+             neighbours
+         }
+    }
+
+    override suspend fun storeMessage(value: Int) {
+        messageQueue.send(AddMessage(value))
+    }
+
+    override suspend fun recordNeighbourMessages(node: String, messages: Set<Int>) {
+        messageQueue.send(RecordMessagesFromNode(node, messages))
+    }
+
+    override suspend fun messages(): Set<Int> {
+        val callback = CompletableDeferred<Set<Int>>()
+        val message = GetMessages(callback = callback)
+        messageQueue.send(message)
+        return callback.await()
     }
 
 }
-
-
-
-
-
-
-

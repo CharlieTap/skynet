@@ -1,13 +1,13 @@
-import com.tap.skynet.MessageHandler
-import com.tap.skynet.NodeMessageHandler
-import com.tap.skynet.Reply
-import com.tap.skynet.Request
+import com.tap.skynet.handler.RequestResponseHandler
+import com.tap.skynet.handler.NodeRequestResponseHandler
+import com.tap.skynet.message.Response
+import com.tap.skynet.message.Request
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-fun echoMessageHandler() : NodeMessageHandler<Echo, EchoOk> = NodeMessageHandler { ctx ->
-    MessageHandler { message ->
-        EchoOk(ctx.messageId(), message.body.msgId, message.body.echo)
+fun echoMessageHandler() : NodeRequestResponseHandler<Echo, EchoOk> = NodeRequestResponseHandler { ctx ->
+    RequestResponseHandler { message ->
+        EchoOk(ctx.newMessageId(), message.body.msgId, message.body.echo)
     }
 }
 
@@ -19,6 +19,7 @@ data class Echo(
     val echo: String,
 ): Request()
 
+@SerialName("echo_ok")
 @Serializable
 data class EchoOk(
     @SerialName("msg_id")
@@ -26,4 +27,4 @@ data class EchoOk(
     @SerialName("in_reply_to")
     override val inReplyTo: Int,
     val echo: String,
-): Reply.Success("echo_ok")
+): Response.Success()

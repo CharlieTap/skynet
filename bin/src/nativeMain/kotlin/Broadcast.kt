@@ -1,14 +1,15 @@
-import com.tap.skynet.MessageHandler
-import com.tap.skynet.NodeMessageHandler
-import com.tap.skynet.Reply
-import com.tap.skynet.Request
+
+import com.tap.skynet.handler.NodeRequestResponseHandler
+import com.tap.skynet.handler.RequestResponseHandler
+import com.tap.skynet.message.Request
+import com.tap.skynet.message.Response
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-fun broadcastMessageHandler() : NodeMessageHandler<Broadcast, BroadcastOk> = NodeMessageHandler { ctx ->
-    MessageHandler { message ->
-        ctx.putMeta(message.body.message)
-        BroadcastOk(ctx.messageId(), message.body.msgId)
+fun broadcastMessageHandler() : NodeRequestResponseHandler<Broadcast, BroadcastOk> = NodeRequestResponseHandler { ctx ->
+    RequestResponseHandler { message ->
+        ctx.storeMessage(message.body.message)
+        BroadcastOk(ctx.newMessageId(), message.body.msgId)
     }
 }
 
@@ -20,10 +21,11 @@ data class Broadcast(
     val message: Int,
 ): Request()
 
+@SerialName("broadcast_ok")
 @Serializable
 data class BroadcastOk(
     @SerialName("msg_id")
     override val msgId: Int,
     @SerialName("in_reply_to")
     override val inReplyTo: Int,
-): Reply.Success("broadcast_ok")
+): Response.Success()

@@ -1,13 +1,17 @@
-import com.tap.skynet.MessageHandler
-import com.tap.skynet.NodeMessageHandler
-import com.tap.skynet.Reply
-import com.tap.skynet.Request
+
+import com.tap.skynet.handler.NodeRequestResponseHandler
+import com.tap.skynet.handler.RequestResponseHandler
+import com.tap.skynet.message.Request
+import com.tap.skynet.message.Response
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-fun topologyMessageHandler() : NodeMessageHandler<Topology, TopologyOk> = NodeMessageHandler { ctx ->
-    MessageHandler { message ->
-        TopologyOk(ctx.messageId(), message.body.msgId)
+fun topologyMessageHandler() : NodeRequestResponseHandler<Topology, TopologyOk> = NodeRequestResponseHandler { ctx ->
+    RequestResponseHandler { message ->
+        message.body.topology[ctx.nodeId()]?.let {
+            ctx.setNeighbours(it.toSet())
+        }
+        TopologyOk(ctx.newMessageId(), message.body.msgId)
     }
 }
 
@@ -19,10 +23,11 @@ data class Topology(
     val topology: Map<String, List<String>>,
 ): Request()
 
+@SerialName("topology_ok")
 @Serializable
 data class TopologyOk(
     @SerialName("msg_id")
     override val msgId: Int,
     @SerialName("in_reply_to")
     override val inReplyTo: Int,
-): Reply.Success("topology_ok")
+): Response.Success()
