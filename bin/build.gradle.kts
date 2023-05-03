@@ -56,7 +56,7 @@ tasks.withType<KotlinCompile>().configureEach {
 }
 
 tasks.register<Exec>("integrationTest") {
-    dependsOn(tasks.named("nativeBinaries"))
+    dependsOn(tasks.named("nativeMainBinaries"))
 
     val node = project.findProperty("node") as String? ?: "echo"
 

@@ -11,14 +11,14 @@ import kotlinx.serialization.Serializable
 
 internal fun gossipMessageHandler(): NodeRequestResponseHandler<Gossip, GossipOk> = NodeRequestResponseHandler { ctx ->
     RequestResponseHandler { message ->
-        ctx.recordNeighbourMessages(message.src, message.body.messages)
-        GossipOk(ctx.newMessageId(), message.body.msgId)
+        ctx.recordNeighbourMessages(message.body.recipients + message.src , message.body.messages)
+        GossipOk(ctx.newMessageId(), message.body.msgId, message.body.messages)
     }
 }
 
 internal fun gossipResponseHandler(): NodeResponseHandler<GossipOk> = NodeResponseHandler { ctx ->
     ResponseHandler { message ->
-
+        ctx.recordNeighbourMessages(setOf(message.src), message.body.messages)
     }
 }
 
@@ -28,6 +28,7 @@ internal data class Gossip(
     @SerialName("msg_id")
     override val msgId: Int,
     val messages: Set<Int>,
+    val recipients: Set<String>
 ): Request()
 
 @SerialName("gossip_ok")
@@ -37,4 +38,5 @@ internal data class GossipOk(
     override val msgId: Int,
     @SerialName("in_reply_to")
     override val inReplyTo: Int,
+    val messages: Set<Int>,
 ): Response.Success()

@@ -20,11 +20,15 @@ internal fun gossipScheduler(node: Node, messageQueue: SendChannel<LibraryAction
         node.neighbours.value.forEach { nodeId ->
             val callback = CompletableDeferred<Set<Int>>()
             messageQueue.send(GetMessages(nodeId, callback))
-            val gossip = Gossip(node.newMessageId(), callback.await())
-            val message = Message(node.id, nodeId, gossip)
-            val output = serializer.encodeToString(MessageSerializer(MessageBody.serializer()), message as Message<MessageBody>)
-            emit(output)
+            val messages = callback.await()
+
+            if(messages.isNotEmpty()) {
+                val gossip = Gossip(node.newMessageId(), callback.await(), node.neighbours.value)
+                val message = Message(node.id, nodeId, gossip)
+                val output = serializer.encodeToString(MessageSerializer(MessageBody.serializer()), message as Message<MessageBody>)
+                emit(output)
+            }
         }
-        delay(200)
+        delay(1)
     }
-}.buffer(1, BufferOverflow.DROP_OLDEST)
+}.buffer(100, BufferOverflow.DROP_OLDEST)

@@ -14,6 +14,7 @@ import kotlinx.coroutines.channels.SendChannel
 
 internal data class Node(
     val id: String,
+    val nodesInCluster: Set<String>,
     val neighbours: AtomicRef<Set<String>>,
     val messageCount: AtomicInt,
     val messageQueue: SendChannel<LibraryAction>
@@ -23,6 +24,7 @@ internal data class Node(
         fun factory(msg: Init, messageQueue: SendChannel<LibraryAction>) : Node {
             return Node(
                 msg.nodeId,
+                msg.nodeIds - msg.nodeId,
                 atomic(emptySet()),
                 atomic(1),
                 messageQueue
@@ -38,6 +40,10 @@ internal data class Node(
         return messageCount.getAndIncrement()
     }
 
+    override fun nodesInCluster(): Set<String> {
+        return nodesInCluster
+    }
+
     override fun setNeighbours(neighbours: Set<String>) {
          this.neighbours.update {
              neighbours
@@ -48,8 +54,8 @@ internal data class Node(
         messageQueue.send(AddMessage(value))
     }
 
-    override suspend fun recordNeighbourMessages(node: String, messages: Set<Int>) {
-        messageQueue.send(RecordMessagesFromNode(node, messages))
+    override suspend fun recordNeighbourMessages(nodes: Set<String>, messages: Set<Int>) {
+        messageQueue.send(RecordMessagesFromNode(nodes, messages))
     }
 
     override suspend fun messages(): Set<Int> {

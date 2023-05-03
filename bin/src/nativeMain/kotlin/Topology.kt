@@ -8,9 +8,24 @@ import kotlinx.serialization.Serializable
 
 fun topologyMessageHandler() : NodeRequestResponseHandler<Topology, TopologyOk> = NodeRequestResponseHandler { ctx ->
     RequestResponseHandler { message ->
-        message.body.topology[ctx.nodeId()]?.let {
-            ctx.setNeighbours(it.toSet())
-        }
+
+        val allOtherNodes = ctx.nodesInCluster()
+        val gossipNodeSize = ((allOtherNodes.size / 4) * 3) + 1
+//        if(gossipNodeSize >= allOtherNodes.size) {
+            ctx.setNeighbours(allOtherNodes)
+//        } else {
+//            val gossipNodes = (1..gossipNodeSize).fold(mutableSetOf<String>()) { acc, _ ->
+//                while (true) {
+//                    val result = acc.add(allOtherNodes.random())
+//                    if(result) {
+//                        break
+//                    }
+//                }
+//                acc
+//            }
+//            ctx.setNeighbours(gossipNodes)
+//        }
+
         TopologyOk(ctx.newMessageId(), message.body.msgId)
     }
 }

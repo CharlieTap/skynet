@@ -30,6 +30,7 @@ kotlin {
             dependencies {
                 implementation(libs.kotlinx.atomic.fu)
                 implementation(libs.kotlinx.coroutines.core)
+                implementation(libs.kotlinx.datetime)
                 implementation(libs.kotlinx.serialization)
                 implementation(libs.result)
                 implementation(libs.uuid)
