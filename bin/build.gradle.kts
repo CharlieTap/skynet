@@ -56,7 +56,7 @@ tasks.withType<KotlinCompile>().configureEach {
 }
 
 tasks.register<Exec>("integrationTest") {
-    dependsOn(tasks.named("nativeMainBinaries"))
+    dependsOn(tasks.named("linkDebugExecutableNative"))
 
     val node = project.findProperty("node") as String? ?: "echo"
 
