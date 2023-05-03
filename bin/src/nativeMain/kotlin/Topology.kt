@@ -3,28 +3,15 @@ import com.tap.skynet.handler.NodeRequestResponseHandler
 import com.tap.skynet.handler.RequestResponseHandler
 import com.tap.skynet.message.Request
 import com.tap.skynet.message.Response
+import com.tap.skynet.topology.clusterToTree
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 fun topologyMessageHandler() : NodeRequestResponseHandler<Topology, TopologyOk> = NodeRequestResponseHandler { ctx ->
     RequestResponseHandler { message ->
 
-        val allOtherNodes = ctx.nodesInCluster()
-        val gossipNodeSize = ((allOtherNodes.size / 4) * 3) + 1
-//        if(gossipNodeSize >= allOtherNodes.size) {
-            ctx.setNeighbours(allOtherNodes)
-//        } else {
-//            val gossipNodes = (1..gossipNodeSize).fold(mutableSetOf<String>()) { acc, _ ->
-//                while (true) {
-//                    val result = acc.add(allOtherNodes.random())
-//                    if(result) {
-//                        break
-//                    }
-//                }
-//                acc
-//            }
-//            ctx.setNeighbours(gossipNodes)
-//        }
+        val topology = clusterToTree(3, ctx.nodesInCluster())
+        ctx.setNeighbours(topology[ctx.nodeId()]!!.toSet())
 
         TopologyOk(ctx.newMessageId(), message.body.msgId)
     }

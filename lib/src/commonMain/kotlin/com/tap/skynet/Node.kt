@@ -24,7 +24,7 @@ internal data class Node(
         fun factory(msg: Init, messageQueue: SendChannel<LibraryAction>) : Node {
             return Node(
                 msg.nodeId,
-                msg.nodeIds - msg.nodeId,
+                msg.nodeIds,
                 atomic(emptySet()),
                 atomic(1),
                 messageQueue
