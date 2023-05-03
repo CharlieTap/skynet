@@ -1,15 +1,19 @@
 package com.tap.skynet.topology
 
+import kotlin.math.ceil
+import kotlin.math.sqrt
+
 /**
  * Creates a balanced tree where each node has at most maxChildrenPerNode children
  */
 fun clusterToTree(
-    maxChildrenPerNode: Int,
     cluster: Set<String>,
 ): Map<String, Set<String>> {
 
-    val tierRanges = generateSequence(0) { it * maxChildrenPerNode + 2 }
-        .takeWhile { it - cluster.size < cluster.size }
+    val maxChildrenPerNode = ceil(sqrt(cluster.size.toDouble())).toInt()
+
+    val tierRanges = generateSequence(0) { it * maxChildrenPerNode + (maxChildrenPerNode - 1) }
+        .takeWhile { it < maxChildrenPerNode * cluster.size }
         .fold(mutableListOf<IntRange>()) { acc, bound ->
             acc.apply {
                 if (acc.isEmpty()) {

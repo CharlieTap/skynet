@@ -1,4 +1,5 @@
 
+import com.tap.skynet.ext.printerr
 import com.tap.skynet.handler.NodeRequestResponseHandler
 import com.tap.skynet.handler.RequestResponseHandler
 import com.tap.skynet.message.Request
@@ -10,7 +11,8 @@ import kotlinx.serialization.Serializable
 fun topologyMessageHandler() : NodeRequestResponseHandler<Topology, TopologyOk> = NodeRequestResponseHandler { ctx ->
     RequestResponseHandler { message ->
 
-        val topology = clusterToTree(3, ctx.nodesInCluster())
+        val topology = clusterToTree(ctx.nodesInCluster())
+        printerr(topology.toString())
         ctx.setNeighbours(topology[ctx.nodeId()]!!.toSet())
 
         TopologyOk(ctx.newMessageId(), message.body.msgId)
