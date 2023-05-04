@@ -8,28 +8,31 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 
 internal expect fun printerr(error: String)
 
-internal fun stdin() : Flow<String> {
-     return flow {
-         do {
-             val line = readlnOrNull()
-             line?.let { serialized ->
-                emit(serialized)
-             }
-         } while (line != null)
-     }
-     .buffer(5000)
-     .flowOn(Dispatchers.IO)
- }
+internal object stdin: Flow<String> {
+    override suspend fun collect(collector: FlowCollector<String>) {
+        flow {
+            do {
+                val line = readlnOrNull()
+                line?.let { serialized ->
+                    emit(serialized)
+                }
+            } while (line != null)
+        }
+        .buffer(5000)
+        .flowOn(Dispatchers.IO)
+        .collect(collector)
+    }
+}
 
 internal object stdout: FlowCollector<String> {
     private val lock: Mutex = Mutex()
@@ -49,29 +52,12 @@ internal object stderr: FlowCollector<String> {
     }
 }
 
-internal suspend fun read() = withContext(Dispatchers.IO) {
-    readlnOrNull() ?: throw IllegalStateException()
-}
-
-internal suspend fun write(output: String) = withContext(Dispatchers.IO) {
-    stdout.emit(output)
-}
-
-internal suspend fun writeErr(output: String) = withContext(Dispatchers.IO) {
-    stderr.emit(output)
-}
-
-internal suspend fun <T: MessageBody> readMessage(json: Json, serializer: KSerializer<T>) : Message<T> {
-    val serialized = read()
+internal suspend fun <T: MessageBody> readMessage(input: Flow<String>, json: Json, serializer: KSerializer<T>) : Message<T> {
+    val serialized = input.first()
     return json.decodeFromString(MessageSerializer(serializer), serialized)
 }
 
-internal suspend fun <T: MessageBody> writeMessage(json: Json, deserialized: Message<T>, serializer: KSerializer<T>) {
-    val output = json.encodeToString(MessageSerializer(serializer), deserialized)
-    write(output)
-}
-
-internal suspend fun <T: MessageBody> writeErrMessage(json: Json, deserialized: Message<T>, serializer: KSerializer<T>) {
-    val output = json.encodeToString(MessageSerializer(serializer), deserialized)
-    writeErr(output)
+internal suspend fun <T: MessageBody> writeMessage(output: FlowCollector<String>, json: Json, deserialized: Message<T>, serializer: KSerializer<T>) {
+    val serialized = json.encodeToString(MessageSerializer(serializer), deserialized)
+    output.emit(serialized)
 }

@@ -24,6 +24,7 @@ import com.tap.skynet.message.MessageSerializer
 import com.tap.skynet.message.NodeError
 import com.tap.skynet.message.Request
 import com.tap.skynet.message.Response
+import kotlin.jvm.JvmName
 import kotlin.reflect.KClass
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,26 +52,27 @@ import com.tap.skynet.ext.serializer as JsonSerializer
 
 class Skynet internal constructor(
     private val handlerLookup: Map<KClass<Request>, NodeRequestResponseHandler<Request, Response>>,
-    private val serializersModule: SerializersModule,
-    private val serializer: Json = JsonSerializer(serializersModule),
-    private val scope: CoroutineScope = CoroutineScope(Job() + Dispatchers.Default),
-    private val input: Flow<String> = stdin(),
-    private val output: FlowCollector<String> = stdout,
-    private val error: FlowCollector<String> = stderr,
-    private val messageQueue: Channel<LibraryAction> = Channel(1000)
+    private val serializer: Json,
+    private val scope: CoroutineScope,
+    private val input: Flow<String>,
+    private val output: FlowCollector<String>,
+    private val error: FlowCollector<String>,
+    private val messageQueue: Channel<LibraryAction>,
 ) {
 
     companion object {
 
         private suspend fun init(
+            input: Flow<String>,
+            output: FlowCollector<String>,
             serializer: Json,
             messageQueue: SendChannel<LibraryAction>
         ) : Node {
-            val init = readMessage(serializer, Init.serializer())
+            val init = readMessage(input, serializer, Init.serializer())
 
             val payload = InitOk(0, init.body.msgId)
             val initOk = Message(init.dst, init.src, payload)
-            writeMessage(serializer, initOk as Message<MessageBody>, MessageBody.serializer())
+            writeMessage(output, serializer, initOk as Message<MessageBody>, MessageBody.serializer())
 
             return Node.factory(init.body, messageQueue)
         }
@@ -100,6 +102,7 @@ class Skynet internal constructor(
         .filterIsInstance<Message<Response>>()
 
 
+    @JvmName("processRequest")
     private fun Flow<Message<Request>>.process(ctx: NodeContext): Flow<Message<Response>> {
         return flatMapMerge { message ->
             flow {
@@ -116,12 +119,14 @@ class Skynet internal constructor(
         }.flowOn(Dispatchers.Default)
     }
 
+    @JvmName("processResponse")
     private fun Flow<Message<Response>>.process(ctx: NodeContext): Flow<Unit> {
         return map { message ->
             val handler = gossipResponseHandler()(ctx)
             handler(message as Message<GossipOk>)
         }.flowOn(Dispatchers.Default)
     }
+
 
     private fun <T: MessageBody> Flow<Message<T>>.serialize(serializer: Json): Flow<String> {
         return map { message ->
@@ -131,7 +136,7 @@ class Skynet internal constructor(
 
     suspend fun run() = scope.launch {
 
-        val node = init(serializer, messageQueue)
+        val node = init(input, output, serializer, messageQueue)
 
         val state = launch { library(messageQueue) }
 
@@ -160,6 +165,43 @@ class Skynet internal constructor(
 
     class Builder {
 
+        private var serializer: Json? = null
+
+        fun serializer(serializer: Json) {
+            this.serializer = serializer
+        }
+
+        private var input: Flow<String>? = null
+
+        fun input(input: Flow<String>) {
+            this.input = input
+        }
+
+        private var output: FlowCollector<String>? = null
+
+        fun output(output: FlowCollector<String>) {
+            this.output = output
+        }
+
+        private var error: FlowCollector<String>? = null
+
+        fun error(error: FlowCollector<String>) {
+            this.error = error
+        }
+
+        private var scope: CoroutineScope? = null
+
+        fun scope(scope: CoroutineScope) {
+            this.scope = scope
+        }
+
+        private var messageQueue: Channel<LibraryAction>? = null
+
+        fun messageQueue(messageQueue: Channel<LibraryAction>) {
+            this.messageQueue = messageQueue
+        }
+
+
         data class HandlerData(
             val requestClass: KClass<Request>,
             val responseClass: KClass<Response>,
@@ -187,6 +229,7 @@ class Skynet internal constructor(
             registerHandler(gossipMessageHandler())
 
             val module = SerializersModule {
+                polymorphic(MessageBody::class, Init::class, Init.serializer())
                 polymorphic(MessageBody::class, InitOk::class, InitOk.serializer())
                 polymorphic(MessageBody::class, Gossip::class, Gossip.serializer())
                 polymorphic(MessageBody::class, GossipOk::class, GossipOk.serializer())
@@ -202,8 +245,13 @@ class Skynet internal constructor(
             }
 
             return Skynet(
-                handlerLookup,
-                module
+                handlerLookup = handlerLookup,
+                serializer = serializer ?: JsonSerializer(module),
+                input = input ?: stdin,
+                output = output ?: stdout,
+                error = error ?: stderr,
+                scope = scope ?: CoroutineScope(Job() + Dispatchers.Default),
+                messageQueue = messageQueue ?: Channel(1000),
             )
         }
     }

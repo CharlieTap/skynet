@@ -17,6 +17,8 @@ kotlin {
         else -> throw GradleException("Host OS is not supported in Kotlin/Native.")
     }
 
+    jvm()
+
     targets.configureEach {
         compilations.configureEach {
             kotlinOptions {
@@ -36,6 +38,12 @@ kotlin {
                 implementation(libs.uuid)
             }
         }
-        val commonTest by getting
+        val commonTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+                implementation(libs.kotlinx.coroutines.test)
+                implementation(libs.turbine)
+            }
+        }
     }
 }
