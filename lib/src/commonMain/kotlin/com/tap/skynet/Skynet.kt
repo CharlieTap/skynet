@@ -3,7 +3,7 @@
 package com.tap.skynet
 
 import com.tap.skynet.actor.LibraryAction
-import com.tap.skynet.actor.library
+import com.tap.skynet.actor.launchLibrary
 import com.tap.skynet.ext.stderr
 import com.tap.skynet.ext.stdin
 import com.tap.skynet.ext.stdout
@@ -134,19 +134,21 @@ class Skynet internal constructor(
         }.flowOn(Dispatchers.Default)
     }
 
+    private fun CoroutineScope.launchGossipScheduler(node: Node) = launch {
+        gossipScheduler(node, messageQueue, serializer).collect(output)
+    }
+
+    private fun CoroutineScope.launchCallbackServer(node: Node) = launch {
+        responses.process(node).collect()
+    }
+
     suspend fun run() = scope.launch {
 
         val node = init(messages, output, serializer, messageQueue)
 
-        val state = launch { library(messageQueue) }
-
-        val scheduler = launch {
-            gossipScheduler(node, messageQueue, serializer).collect(output)
-        }
-
-        val callbacks = launch {
-            responses.process(node).collect()
-        }
+        val state = launchLibrary(messageQueue)
+        val scheduler = launchGossipScheduler(node)
+        val callbacks = launchCallbackServer(node)
 
         val processed = requests.process(node).shareIn(scope, SharingStarted.Lazily, 100)
 

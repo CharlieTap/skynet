@@ -18,7 +18,7 @@ data class RecordMessagesFromNode(val nodes: Set<String>, val messages: Set<Int>
  * Library is an actor containing a record of all messages the node has received alongside
  * a record of each of its neighbours and what messages they have seen
  */
-fun CoroutineScope.library(channel : ReceiveChannel<LibraryAction>) = launch {
+fun CoroutineScope.launchLibrary(channel : ReceiveChannel<LibraryAction>) = launch {
     // master set
     val messages : MutableSet<Int> = mutableSetOf()
     // A map containing a set of seen message for each of a neighbours
