@@ -8,7 +8,6 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.buffer
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
@@ -50,11 +49,6 @@ internal object stderr: FlowCollector<String> {
             printerr(value)
         }
     }
-}
-
-internal suspend fun <T: MessageBody> readMessage(input: Flow<String>, json: Json, serializer: KSerializer<T>) : Message<T> {
-    val serialized = input.first()
-    return json.decodeFromString(MessageSerializer(serializer), serialized)
 }
 
 internal suspend fun <T: MessageBody> writeMessage(output: FlowCollector<String>, json: Json, deserialized: Message<T>, serializer: KSerializer<T>) {

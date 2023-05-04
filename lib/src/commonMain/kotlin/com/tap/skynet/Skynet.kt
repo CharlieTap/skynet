@@ -4,7 +4,6 @@ package com.tap.skynet
 
 import com.tap.skynet.actor.LibraryAction
 import com.tap.skynet.actor.library
-import com.tap.skynet.ext.readMessage
 import com.tap.skynet.ext.stderr
 import com.tap.skynet.ext.stdin
 import com.tap.skynet.ext.stdout
@@ -37,6 +36,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapMerge
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -63,12 +63,12 @@ class Skynet internal constructor(
     companion object {
 
         private suspend fun init(
-            input: Flow<String>,
+            input: Flow<Message<MessageBody>>,
             output: FlowCollector<String>,
             serializer: Json,
             messageQueue: SendChannel<LibraryAction>
         ) : Node {
-            val init = readMessage(input, serializer, Init.serializer())
+            val init = input.first() as Message<Init>
 
             val payload = InitOk(0, init.body.msgId)
             val initOk = Message(init.dst, init.src, payload)
@@ -91,10 +91,10 @@ class Skynet internal constructor(
 
     private val messages = input.map { message ->
         serializer.decodeFromString(MessageSerializer(MessageBody.serializer()), message)
-    }.shareIn(scope, SharingStarted.Lazily) // Has to be lazy else it could read init
+    }.shareIn(scope, SharingStarted.Lazily, 1000)
 
     private val requests = messages
-        .filter { it.body is Request }
+        .filter { it.body is Request && it.body !is Init }
         .filterIsInstance<Message<Request>>()
 
     private val responses = messages
@@ -136,7 +136,7 @@ class Skynet internal constructor(
 
     suspend fun run() = scope.launch {
 
-        val node = init(input, output, serializer, messageQueue)
+        val node = init(messages, output, serializer, messageQueue)
 
         val state = launch { library(messageQueue) }
 

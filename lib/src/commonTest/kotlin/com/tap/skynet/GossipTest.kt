@@ -7,7 +7,6 @@ import com.tap.skynet.message.MessageBody
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.modules.SerializersModule
 
@@ -22,7 +21,7 @@ class GossipTest: SkynetTestClass() {
     @Test
     fun `ingestion of gossip is met with a corresponding gossip_ok message`() = scope.runTest {
 
-        val skynet = launch { builder.build().run().join() }
+        val skynet = builder.build().run()
         init()
 
         val messages = setOf(1,2,3)
