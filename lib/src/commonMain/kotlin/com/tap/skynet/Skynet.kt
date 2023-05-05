@@ -142,6 +142,18 @@ class Skynet internal constructor(
         responses.process(node).collect()
     }
 
+    private fun CoroutineScope.launchRequestResponseServer(node: Node) = launch {
+        val processed = requests.process(node).shareIn(scope, SharingStarted.Lazily, 100)
+
+        launch {
+            processed.filter { it.body is Response.Success }.serialize(serializer).collect(output)
+        }
+
+        launch {
+            processed.filter { it.body is Response.Error }.serialize(serializer).collect(error)
+        }
+    }
+
     suspend fun run() = scope.launch {
 
         val node = init(messages, output, serializer, messageQueue)
@@ -149,18 +161,9 @@ class Skynet internal constructor(
         val state = launchLibrary(messageQueue)
         val scheduler = launchGossipScheduler(node)
         val callbacks = launchCallbackServer(node)
+        val server = launchRequestResponseServer(node)
 
-        val processed = requests.process(node).shareIn(scope, SharingStarted.Lazily, 100)
-
-        val successes = launch {
-            processed.filter { it.body is Response.Success }.serialize(serializer).collect(output)
-        }
-
-        val failures = launch {
-            processed.filter { it.body is Response.Error }.serialize(serializer).collect(error)
-        }
-
-        listOf(state, scheduler, callbacks, successes, failures).joinAll()
+        listOf(state, scheduler, callbacks, server).joinAll()
     }
 
 
