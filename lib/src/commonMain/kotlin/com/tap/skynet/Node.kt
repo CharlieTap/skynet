@@ -4,7 +4,6 @@ import com.tap.skynet.actor.AddMessage
 import com.tap.skynet.actor.GetMessages
 import com.tap.skynet.actor.LibraryAction
 import com.tap.skynet.actor.RecordMessagesFromNode
-import com.tap.skynet.message.Init
 import kotlinx.atomicfu.AtomicInt
 import kotlinx.atomicfu.AtomicRef
 import kotlinx.atomicfu.atomic
@@ -13,18 +12,18 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.SendChannel
 
 internal data class Node(
-    val id: String,
-    val nodesInCluster: Set<String>,
+    var id: String,
+    var nodesInCluster: Set<String>,
     val neighbours: AtomicRef<Set<String>>,
     val messageCount: AtomicInt,
     val messageQueue: SendChannel<LibraryAction>
 ): NodeContext {
 
     companion object {
-        fun factory(msg: Init, messageQueue: SendChannel<LibraryAction>) : Node {
+        fun factory(messageQueue: SendChannel<LibraryAction>) : Node {
             return Node(
-                msg.nodeId,
-                msg.nodeIds,
+                "",
+                emptySet(),
                 atomic(emptySet()),
                 atomic(1),
                 messageQueue

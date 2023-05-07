@@ -29,19 +29,18 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterIsInstance
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapMerge
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.shareIn
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.serialization.InternalSerializationApi
@@ -58,24 +57,10 @@ class Skynet internal constructor(
     private val output: FlowCollector<String>,
     private val error: FlowCollector<String>,
     private val messageQueue: Channel<LibraryAction>,
+    private var node: Node = Node.factory(messageQueue)
 ) {
 
     companion object {
-
-        private suspend fun init(
-            input: Flow<Message<MessageBody>>,
-            output: FlowCollector<String>,
-            serializer: Json,
-            messageQueue: SendChannel<LibraryAction>
-        ) : Node {
-            val init = input.first() as Message<Init>
-
-            val payload = InitOk(0, init.body.msgId)
-            val initOk = Message(init.dst, init.src, payload)
-            writeMessage(output, serializer, initOk as Message<MessageBody>, MessageBody.serializer())
-
-            return Node.factory(init.body, messageQueue)
-        }
 
         private fun <I: Request> runner(
             handler: RequestResponseHandler<I, Response>
@@ -86,12 +71,21 @@ class Skynet internal constructor(
                 NodeError.crash(it.toString())
             }
         }
-
     }
 
     private val messages = input.map { message ->
         serializer.decodeFromString(MessageSerializer(MessageBody.serializer()), message)
-    }.shareIn(scope, SharingStarted.Lazily, 1000)
+    }.transform { message ->
+        if(message.body is Init) {
+            val payload = InitOk(0, message.body.msgId)
+            val initOk = Message(message.dst, message.src, payload)
+
+            node.id = message.body.nodeId
+            node.nodesInCluster = message.body.nodeIds
+
+            writeMessage(output, serializer, initOk as Message<MessageBody>, MessageBody.serializer())
+        } else emit(message)
+    }.shareIn(scope, SharingStarted.Eagerly, 1000)
 
     private val requests = messages
         .filter { it.body is Request && it.body !is Init }
@@ -155,8 +149,6 @@ class Skynet internal constructor(
     }
 
     suspend fun run() = scope.launch {
-
-        val node = init(messages, output, serializer, messageQueue)
 
         val state = launchLibrary(messageQueue)
         val scheduler = launchGossipScheduler(node)

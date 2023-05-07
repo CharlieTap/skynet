@@ -22,9 +22,9 @@ class InitTest: SkynetTestClass() {
         val initOk = outbound(InitOk(0, 0))
         val expected = serializeMessage(initOk)
 
-        stdin.emit(serializeMessage(init))
 
         stdout.test {
+            stdin.emit(serializeMessage(init))
             val event = awaitItem()
             assertEquals(expected, event)
         }

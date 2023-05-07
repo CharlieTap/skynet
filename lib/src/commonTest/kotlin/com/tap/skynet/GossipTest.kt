@@ -29,9 +29,8 @@ class GossipTest: SkynetTestClass() {
         val gossipOk = outbound(GossipOk(1, 1, messages))
         val expected = serializeMessage(gossipOk)
 
-        stdin.emit(serializeMessage(gossip))
-
         stdout.drop(1).test {
+            stdin.emit(serializeMessage(gossip))
             val event = awaitItem()
             assertEquals(expected, event)
         }
